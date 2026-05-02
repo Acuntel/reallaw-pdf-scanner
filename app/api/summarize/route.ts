@@ -10,8 +10,17 @@ const MAX_PAGES = 40;
 
 type Body = {
   pages?: string[];
+  mediaType?: string;
   fileName?: string;
 };
+
+const ALLOWED_MEDIA = [
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+] as const;
+type AllowedMedia = (typeof ALLOWED_MEDIA)[number];
 
 export async function POST(req: NextRequest) {
   try {
@@ -57,11 +66,17 @@ export async function POST(req: NextRequest) {
 
     const client = new Anthropic({ apiKey });
 
+    const mediaType: AllowedMedia = (
+      ALLOWED_MEDIA.includes(body.mediaType as AllowedMedia)
+        ? body.mediaType
+        : "image/jpeg"
+    ) as AllowedMedia;
+
     const userContent: Anthropic.ContentBlockParam[] = pages.map((b64) => ({
       type: "image" as const,
       source: {
         type: "base64" as const,
-        media_type: "image/jpeg" as const,
+        media_type: mediaType,
         data: b64,
       },
     }));

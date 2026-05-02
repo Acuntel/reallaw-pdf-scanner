@@ -40,17 +40,31 @@ function parseSummary(summary: string): Line[] {
 
 type RenderParams = { maxDim: number; quality: number };
 
+type EncodedPage = { mediaType: string; base64: string };
+
+let webpSupportCache: boolean | null = null;
+function supportsWebP(): boolean {
+  if (webpSupportCache !== null) return webpSupportCache;
+  const c = document.createElement("canvas");
+  c.width = 1;
+  c.height = 1;
+  webpSupportCache = c.toDataURL("image/webp").startsWith("data:image/webp");
+  return webpSupportCache;
+}
+
 async function renderPagesToBase64(
   file: File,
   params: RenderParams,
   onProgress: (current: number, total: number) => void,
-): Promise<string[]> {
+): Promise<EncodedPage[]> {
   const pdfjs: typeof import("pdfjs-dist") = await import("pdfjs-dist");
   pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
   const buf = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data: buf }).promise;
-  const images: string[] = [];
+  const useWebP = supportsWebP();
+  const mediaType = useWebP ? "image/webp" : "image/jpeg";
+  const pages: EncodedPage[] = [];
 
   for (let i = 1; i <= pdf.numPages; i++) {
     onProgress(i, pdf.numPages);
@@ -74,46 +88,51 @@ async function renderPagesToBase64(
     const blob: Blob = await new Promise((resolve, reject) =>
       canvas.toBlob(
         (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
-        "image/jpeg",
+        mediaType,
         params.quality,
       ),
     );
     const arrayBuf = await blob.arrayBuffer();
-    images.push(arrayBufferToBase64(arrayBuf));
+    pages.push({ mediaType, base64: arrayBufferToBase64(arrayBuf) });
 
     canvas.width = 0;
     canvas.height = 0;
   }
 
-  return images;
+  return pages;
 }
 
-const PAYLOAD_BUDGET = 3_200_000; // raw bytes; with base64 overhead ~4.3MB body
+const PAYLOAD_BUDGET = 3_300_000;
 const RENDER_TIERS: RenderParams[] = [
   { maxDim: 1400, quality: 0.7 },
   { maxDim: 1200, quality: 0.65 },
   { maxDim: 1000, quality: 0.6 },
   { maxDim: 850, quality: 0.55 },
+  { maxDim: 700, quality: 0.5 },
+  { maxDim: 600, quality: 0.45 },
 ];
 
 async function rasterizePdf(
   file: File,
   onProgress: (current: number, total: number, note?: string) => void,
-): Promise<string[]> {
+): Promise<EncodedPage[]> {
   for (let tier = 0; tier < RENDER_TIERS.length; tier++) {
     const params = RENDER_TIERS[tier];
     if (tier > 0)
       onProgress(
         0,
         0,
-        `Recompressing at ${params.maxDim}px / q${params.quality}…`,
+        `Compressing more (${params.maxDim}px / q${params.quality})…`,
       );
-    const images = await renderPagesToBase64(file, params, onProgress);
-    const rawBytes = images.reduce((sum, b64) => sum + (b64.length * 3) / 4, 0);
-    if (rawBytes <= PAYLOAD_BUDGET) return images;
+    const pages = await renderPagesToBase64(file, params, onProgress);
+    const rawBytes = pages.reduce(
+      (sum, p) => sum + (p.base64.length * 3) / 4,
+      0,
+    );
+    if (rawBytes <= PAYLOAD_BUDGET) return pages;
   }
   throw new Error(
-    "PDF too large to upload after compression. Try splitting it into smaller sections or reducing scan DPI in the source.",
+    "PDF too large even at minimum compression. Split into sections or scan at lower DPI.",
   );
 }
 
@@ -186,7 +205,11 @@ export default function Home() {
       const res = await fetch("/api/summarize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pages, fileName: file.name }),
+        body: JSON.stringify({
+          pages: pages.map((p) => p.base64),
+          mediaType: pages[0]?.mediaType ?? "image/jpeg",
+          fileName: file.name,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
