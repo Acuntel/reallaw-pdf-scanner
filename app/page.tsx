@@ -38,8 +38,11 @@ function parseSummary(summary: string): Line[] {
     });
 }
 
-async function rasterizePdf(
+type RenderParams = { maxDim: number; quality: number };
+
+async function renderPagesToBase64(
   file: File,
+  params: RenderParams,
   onProgress: (current: number, total: number) => void,
 ): Promise<string[]> {
   const pdfjs: typeof import("pdfjs-dist") = await import("pdfjs-dist");
@@ -47,16 +50,17 @@ async function rasterizePdf(
 
   const buf = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data: buf }).promise;
-
-  const MAX_DIM = 1500;
-  const JPEG_QUALITY = 0.7;
   const images: string[] = [];
 
   for (let i = 1; i <= pdf.numPages; i++) {
     onProgress(i, pdf.numPages);
     const page = await pdf.getPage(i);
     const baseVp = page.getViewport({ scale: 1 });
-    const scale = Math.min(MAX_DIM / baseVp.width, MAX_DIM / baseVp.height, 2);
+    const scale = Math.min(
+      params.maxDim / baseVp.width,
+      params.maxDim / baseVp.height,
+      2,
+    );
     const viewport = page.getViewport({ scale });
 
     const canvas = document.createElement("canvas");
@@ -71,7 +75,7 @@ async function rasterizePdf(
       canvas.toBlob(
         (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
         "image/jpeg",
-        JPEG_QUALITY,
+        params.quality,
       ),
     );
     const arrayBuf = await blob.arrayBuffer();
@@ -82,6 +86,35 @@ async function rasterizePdf(
   }
 
   return images;
+}
+
+const PAYLOAD_BUDGET = 3_200_000; // raw bytes; with base64 overhead ~4.3MB body
+const RENDER_TIERS: RenderParams[] = [
+  { maxDim: 1400, quality: 0.7 },
+  { maxDim: 1200, quality: 0.65 },
+  { maxDim: 1000, quality: 0.6 },
+  { maxDim: 850, quality: 0.55 },
+];
+
+async function rasterizePdf(
+  file: File,
+  onProgress: (current: number, total: number, note?: string) => void,
+): Promise<string[]> {
+  for (let tier = 0; tier < RENDER_TIERS.length; tier++) {
+    const params = RENDER_TIERS[tier];
+    if (tier > 0)
+      onProgress(
+        0,
+        0,
+        `Recompressing at ${params.maxDim}px / q${params.quality}…`,
+      );
+    const images = await renderPagesToBase64(file, params, onProgress);
+    const rawBytes = images.reduce((sum, b64) => sum + (b64.length * 3) / 4, 0);
+    if (rawBytes <= PAYLOAD_BUDGET) return images;
+  }
+  throw new Error(
+    "PDF too large to upload after compression. Try splitting it into smaller sections or reducing scan DPI in the source.",
+  );
 }
 
 function arrayBufferToBase64(buf: ArrayBuffer): string {
@@ -144,8 +177,9 @@ export default function Home() {
     setUsage(null);
     setProgress("Reading PDF…");
     try {
-      const pages = await rasterizePdf(file, (cur, total) => {
-        setProgress(`Rendering page ${cur} of ${total}`);
+      const pages = await rasterizePdf(file, (cur, total, note) => {
+        if (note) setProgress(note);
+        else if (total > 0) setProgress(`Rendering page ${cur} of ${total}`);
       });
       setProgress(`Sending ${pages.length} pages to Claude…`);
 
