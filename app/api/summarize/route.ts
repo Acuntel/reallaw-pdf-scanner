@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import Groq from "groq-sdk";
+import Anthropic from "@anthropic-ai/sdk";
 import { extractContract, formatFieldsForLLM } from "@/lib/extractPdf";
 import { MASTER_PROMPT } from "@/lib/masterPrompt";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   try {
@@ -38,28 +38,36 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const apiKey = process.env.GROQ_API_KEY;
+    const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: "GROQ_API_KEY not configured on server" },
+        { error: "ANTHROPIC_API_KEY not configured on server" },
         { status: 500 },
       );
     }
 
-    const groq = new Groq({ apiKey });
+    const client = new Anthropic({ apiKey });
     const fieldDump = formatFieldsForLLM(extracted);
 
-    const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
-      temperature: 0.1,
-      max_tokens: 2000,
-      messages: [
-        { role: "system", content: MASTER_PROMPT },
-        { role: "user", content: fieldDump },
+    const response = await client.messages.create({
+      model: "claude-opus-4-7",
+      max_tokens: 16000,
+      thinking: { type: "adaptive" },
+      system: [
+        {
+          type: "text",
+          text: MASTER_PROMPT,
+          cache_control: { type: "ephemeral" },
+        },
       ],
+      messages: [{ role: "user", content: fieldDump }],
     });
 
-    const summary = completion.choices[0]?.message?.content?.trim() ?? "";
+    const summary = response.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("\n")
+      .trim();
 
     return NextResponse.json({
       summary,
@@ -69,12 +77,23 @@ export async function POST(req: NextRequest) {
         filledCount: extracted.filledCount,
         missingCount: extracted.missingCount,
       },
+      usage: {
+        input: response.usage.input_tokens,
+        output: response.usage.output_tokens,
+        cache_read: response.usage.cache_read_input_tokens ?? 0,
+        cache_write: response.usage.cache_creation_input_tokens ?? 0,
+      },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    if (err instanceof Anthropic.APIError) {
+      console.error("anthropic error", err.status, err.message);
+      return NextResponse.json(
+        { error: `Claude API ${err.status}: ${err.message}` },
+        { status: err.status >= 500 ? 502 : err.status },
+      );
+    }
+    const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("summarize error", err);
-    return NextResponse.json(
-      { error: err?.message ?? "Unknown error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

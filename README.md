@@ -6,28 +6,26 @@ Drop a Chicago Multi-Board 8.0 Residential Contract PDF, get a 30-second shortha
 
 1. PDF uploaded to `/api/summarize`
 2. `pdf-lib` enumerates every AcroForm field (text, checkbox, radio, dropdown, signature) — filled OR blank
-3. Field dump sent to Groq Llama 3.3 70B with the master prompt in `lib/masterPrompt.ts`
+3. Field dump sent to Anthropic Claude (claude-opus-4-7) with adaptive thinking + cached system prompt
 4. Returns a structured summary + a "MISSING / NEEDS ATTENTION" section flagging blank critical fields
 
 ## Local dev
 
 ```bash
 npm install
-echo "GROQ_API_KEY=gsk_..." > .env.local
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env.local
 npm run dev
 ```
 
 ## Deployment
 
 - Hosted on Vercel
-- Required env var: `GROQ_API_KEY` (set in Vercel project settings)
-- Free tier: Groq is free, Vercel hobby is free → $0/month
+- Required env var: `ANTHROPIC_API_KEY` (set in Vercel project settings)
+- The master prompt (~1.5K tokens) is cached via `cache_control: ephemeral` — every request after the first costs ~10% on the system prompt portion
 
-## Why Groq
+## Model choice
 
-- REAL Law's chatbot already uses Groq
-- Free tier is generous
-- Llama 3.3 70B is plenty for structured field extraction
+Default is `claude-opus-4-7` (most capable). For this structured-extraction task `claude-sonnet-4-6` would also work and costs ~5x less — change the `model:` line in `app/api/summarize/route.ts` if cost matters more than top-tier accuracy.
 
 ## Tweaking the master prompt
 
