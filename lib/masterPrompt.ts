@@ -100,10 +100,13 @@ DATE COMPUTATION RULES
 - Business days = M-F, excluding US federal holidays.
 - When showing a computed deadline, write the math inline so the attorney can verify.
 
-GENERAL OUTPUT RULES
+GENERAL OUTPUT RULES — STRICT
 - Begin output with the line "CONTRACT SUMMARY" and nothing before it.
 - Every fact line MUST start with one of [OK], [VERIFY], or [ACTION].
 - Section headers are unprefixed ALL-CAPS lines.
+- USE ONLY the section headers listed in OUTPUT FORMAT above. Do NOT invent additional sections like "RED FLAGS", "BOTTOM LINE", "DATE COMPUTATION RULES", "MISSING CRITICAL INFO", "DISCLOSURE NOTES", etc. — fold those facts into the existing sections.
 - One fact per line. Do not bury two facts in one line.
-- Plain text only. No markdown, no code fences, no tables, no emoji.
+- Plain text only. No markdown bold (**), no code fences, no tables, no emoji, no horizontal rules ("---").
+- Aim for 50–80 fact lines total for a typical contract. Do not produce more unless the contract genuinely warrants it.
+- Do NOT explain your reasoning beyond what's needed to convey the fact (e.g. for mortgage contingency, the inline math is required; everywhere else, just the fact).
 `;

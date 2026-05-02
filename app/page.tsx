@@ -383,7 +383,7 @@ export default function Home() {
                     {usage.cache_read > 0 && (
                       <span>cache hit {usage.cache_read.toLocaleString()}</span>
                     )}
-                    <span className="ml-auto">claude-haiku-4-5</span>
+                    <span className="ml-auto">claude-sonnet-4-6</span>
                   </div>
                 )}
               </article>
