@@ -6,7 +6,7 @@ Drop a Chicago Multi-Board 8.0 Residential Contract PDF, get a 30-second shortha
 
 1. PDF uploaded to `/api/summarize`
 2. `pdf-lib` enumerates every AcroForm field (text, checkbox, radio, dropdown, signature) — filled OR blank
-3. Field dump sent to Anthropic Claude (claude-opus-4-7) with adaptive thinking + cached system prompt
+3. PDF sent directly to Anthropic Claude (claude-sonnet-4-6) with adaptive thinking
 4. Returns a structured summary + a "MISSING / NEEDS ATTENTION" section flagging blank critical fields
 
 ## Local dev
@@ -25,7 +25,7 @@ npm run dev
 
 ## Model choice
 
-Default is `claude-opus-4-7` (most capable). For this structured-extraction task `claude-sonnet-4-6` would also work and costs ~5x less — change the `model:` line in `app/api/summarize/route.ts` if cost matters more than top-tier accuracy.
+Default is `claude-sonnet-4-6` — best balance of speed, cost, and accuracy for structured extraction. Swap to `claude-opus-4-7` in `app/api/summarize/route.ts` if you need maximum accuracy on a particularly tricky contract.
 
 ## Tweaking the master prompt
 
