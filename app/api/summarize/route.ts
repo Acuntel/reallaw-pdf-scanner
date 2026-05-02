@@ -6,6 +6,8 @@ import { MASTER_PROMPT } from "@/lib/masterPrompt";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
+const MAX_PDF_BYTES = 4_500_000;
+
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
@@ -25,18 +27,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const extracted = await extractContract(bytes);
-
-    if (extracted.fieldCount === 0) {
+    if (file.size > MAX_PDF_BYTES) {
       return NextResponse.json(
         {
-          error:
-            "No fillable form fields detected in this PDF. The Multi-Board 8.0 contract uses an AcroForm — make sure you're uploading the editable PDF, not a flattened scan.",
+          error: `PDF is ${(file.size / 1024 / 1024).toFixed(1)} MB. Vercel caps request bodies at 4.5 MB. Compress the PDF or reduce its page count.`,
         },
-        { status: 422 },
+        { status: 413 },
       );
     }
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const extracted = await extractContract(bytes);
+    const pdfBase64 = Buffer.from(bytes).toString("base64");
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
@@ -47,7 +49,29 @@ export async function POST(req: NextRequest) {
     }
 
     const client = new Anthropic({ apiKey });
-    const fieldDump = formatFieldsForLLM(extracted);
+
+    const userContent: Anthropic.ContentBlockParam[] = [
+      {
+        type: "document",
+        source: {
+          type: "base64",
+          media_type: "application/pdf",
+          data: pdfBase64,
+        },
+      },
+    ];
+
+    if (extracted.filledCount > 0) {
+      userContent.push({
+        type: "text",
+        text: `STRUCTURED FIELD MANIFEST (from AcroForm metadata — supplementary; trust the PDF if these disagree):\n\n${formatFieldsForLLM(extracted)}`,
+      });
+    } else {
+      userContent.push({
+        type: "text",
+        text: "No usable AcroForm field values were extractable (form was likely flattened by DocuSign or rasterized). Read everything directly from the PDF pages above.",
+      });
+    }
 
     const response = await client.messages.create({
       model: "claude-opus-4-7",
@@ -60,7 +84,7 @@ export async function POST(req: NextRequest) {
           cache_control: { type: "ephemeral" },
         },
       ],
-      messages: [{ role: "user", content: fieldDump }],
+      messages: [{ role: "user", content: userContent }],
     });
 
     const summary = response.content
@@ -73,9 +97,9 @@ export async function POST(req: NextRequest) {
       summary,
       stats: {
         pageCount: extracted.pageCount,
-        fieldCount: extracted.fieldCount,
-        filledCount: extracted.filledCount,
-        missingCount: extracted.missingCount,
+        fileSizeKb: Math.round(file.size / 1024),
+        acroformFilled: extracted.filledCount,
+        acroformTotal: extracted.fieldCount,
       },
       usage: {
         input: response.usage.input_tokens,

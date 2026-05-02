@@ -4,9 +4,9 @@ import { useCallback, useRef, useState } from "react";
 
 type Stats = {
   pageCount: number;
-  fieldCount: number;
-  filledCount: number;
-  missingCount: number;
+  fileSizeKb: number;
+  acroformFilled: number;
+  acroformTotal: number;
 };
 
 export default function Home() {
@@ -141,11 +141,18 @@ export default function Home() {
         )}
 
         {stats && (
-          <div className="mt-6 grid grid-cols-4 gap-3">
+          <div className="mt-6 grid grid-cols-3 gap-3">
             <Stat label="Pages" value={stats.pageCount} />
-            <Stat label="Fields" value={stats.fieldCount} />
-            <Stat label="Filled" value={stats.filledCount} tone="good" />
-            <Stat label="Blank" value={stats.missingCount} tone="warn" />
+            <Stat label="Size (KB)" value={stats.fileSizeKb} />
+            <Stat
+              label="AcroForm filled"
+              value={
+                stats.acroformTotal > 0
+                  ? `${stats.acroformFilled}/${stats.acroformTotal}`
+                  : "flat"
+              }
+              tone={stats.acroformFilled > 0 ? "good" : undefined}
+            />
           </div>
         )}
 
@@ -170,7 +177,7 @@ function Stat({
   tone,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   tone?: "good" | "warn";
 }) {
   const color =
