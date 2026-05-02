@@ -4,7 +4,7 @@ import { extractContract, formatFieldsForLLM } from "@/lib/extractPdf";
 import { MASTER_PROMPT } from "@/lib/masterPrompt";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 const MAX_PDF_BYTES = 4_500_000;
 
@@ -75,8 +75,8 @@ export async function POST(req: NextRequest) {
 
     const response = await client.messages.create({
       model: "claude-sonnet-4-6",
-      max_tokens: 16000,
-      thinking: { type: "adaptive" },
+      max_tokens: 8000,
+      thinking: { type: "disabled" },
       system: [
         {
           type: "text",
