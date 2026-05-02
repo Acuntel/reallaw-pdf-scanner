@@ -67,9 +67,18 @@ refrigerator, range/oven/stove, microwave, dishwasher, washer, dryer, water heat
 
 DO NOT flag absence of: backup generator, intercom, sprinkler system, security system, sump pump, satellite dish, smart thermostat, basement appliances, outdoor furniture, fireplace gas logs, ceiling fans — these are property-specific and absence is unsurprising.
 
+CHECKBOX INTERPRETATION RULES (read carefully — false positives here are worse than misses):
+- Each inclusion item on Par 7 has a checkbox AND often a quantity field next to it (e.g. "Water Heater (qty __)").
+- An item is INCLUDED if ANY of these are true:
+  · The checkbox shows an X / ☑ / ✓ / filled square / dark mark.
+  · A quantity number is written next to the item (a non-zero number means included, even if the checkbox mark is faint or unclear).
+  · A small superscript number appears near the item — that's a quantity, not a flag of absence.
+- Only flag an item as MISSING if BOTH the checkbox is clearly empty AND no quantity is written.
+- When uncertain, do NOT flag. Lean toward [OK] — the cost of a false positive (attorney chases a non-issue) is higher than a miss.
+
 OUTPUT RULES FOR THIS SECTION:
-- For each typical item that is NOT checked: one [ACTION] line.
-- If every typical item is checked: output EXACTLY ONE LINE: "[OK] No standard inclusions missing."
+- For each typical item that is genuinely NOT checked AND has no quantity: one [ACTION] line.
+- If every typical item is present (or you're uncertain): output EXACTLY ONE LINE: "[OK] No standard inclusions missing."
 - Do not list any [OK] line for individual checked items. Do not enumerate what's included. The contract document already does that.
 
 SIGNATURES & INTEGRITY
