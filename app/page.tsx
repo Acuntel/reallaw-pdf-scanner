@@ -4,9 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 
 type Stats = {
   pageCount: number;
-  fileSizeKb: number;
-  acroformFilled: number;
-  acroformTotal: number;
+  fileName: string | null;
 };
 
 type Usage = {
@@ -40,9 +38,69 @@ function parseSummary(summary: string): Line[] {
     });
 }
 
+async function rasterizePdf(
+  file: File,
+  onProgress: (current: number, total: number) => void,
+): Promise<string[]> {
+  const pdfjs: typeof import("pdfjs-dist") = await import("pdfjs-dist");
+  pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjs.getDocument({ data: buf }).promise;
+
+  const MAX_DIM = 1500;
+  const JPEG_QUALITY = 0.7;
+  const images: string[] = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    onProgress(i, pdf.numPages);
+    const page = await pdf.getPage(i);
+    const baseVp = page.getViewport({ scale: 1 });
+    const scale = Math.min(MAX_DIM / baseVp.width, MAX_DIM / baseVp.height, 2);
+    const viewport = page.getViewport({ scale });
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    const ctx = canvas.getContext("2d", { willReadFrequently: false });
+    if (!ctx) throw new Error("Could not create canvas context");
+
+    await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+
+    const blob: Blob = await new Promise((resolve, reject) =>
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("toBlob failed"))),
+        "image/jpeg",
+        JPEG_QUALITY,
+      ),
+    );
+    const arrayBuf = await blob.arrayBuffer();
+    images.push(arrayBufferToBase64(arrayBuf));
+
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+
+  return images;
+}
+
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(
+      null,
+      Array.from(bytes.subarray(i, i + chunk)),
+    );
+  }
+  return btoa(binary);
+}
+
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<string>("");
   const [summary, setSummary] = useState<string>("");
   const [stats, setStats] = useState<Stats | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -84,10 +142,18 @@ export default function Home() {
     setSummary("");
     setStats(null);
     setUsage(null);
+    setProgress("Reading PDF…");
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/summarize", { method: "POST", body: fd });
+      const pages = await rasterizePdf(file, (cur, total) => {
+        setProgress(`Rendering page ${cur} of ${total}`);
+      });
+      setProgress(`Sending ${pages.length} pages to Claude…`);
+
+      const res = await fetch("/api/summarize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pages, fileName: file.name }),
+      });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error ?? "Failed");
@@ -101,6 +167,7 @@ export default function Home() {
       setError(msg);
     } finally {
       setLoading(false);
+      setProgress("");
     }
   }, [file]);
 
@@ -218,6 +285,11 @@ export default function Home() {
                 Clear
               </button>
             )}
+            {loading && progress && (
+              <span className="text-xs uppercase tracking-[0.15em] text-navy/50">
+                {progress}
+              </span>
+            )}
           </div>
 
           {error && (
@@ -240,13 +312,14 @@ export default function Home() {
                 <CountChip label="OK" count={counts.ok} tone="ok" />
                 <div className="ml-auto flex items-center gap-3 text-[11px] uppercase tracking-[0.15em] text-navy/50">
                   <span>{stats.pageCount} pp</span>
-                  <span className="text-gold">·</span>
-                  <span>{stats.fileSizeKb} KB</span>
-                  {stats.acroformFilled > 0 && (
+                  {stats.fileName && (
                     <>
                       <span className="text-gold">·</span>
-                      <span>
-                        {stats.acroformFilled}/{stats.acroformTotal} fields
+                      <span
+                        className="truncate max-w-[200px]"
+                        title={stats.fileName}
+                      >
+                        {stats.fileName}
                       </span>
                     </>
                   )}
@@ -276,7 +349,7 @@ export default function Home() {
                     {usage.cache_read > 0 && (
                       <span>cache hit {usage.cache_read.toLocaleString()}</span>
                     )}
-                    <span className="ml-auto">claude-sonnet-4-6</span>
+                    <span className="ml-auto">claude-haiku-4-5</span>
                   </div>
                 )}
               </article>

@@ -1,44 +1,51 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { extractContract, formatFieldsForLLM } from "@/lib/extractPdf";
 import { MASTER_PROMPT } from "@/lib/masterPrompt";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const MAX_PDF_BYTES = 4_500_000;
+const MAX_BODY_BYTES = 4_400_000;
+const MAX_PAGES = 40;
+
+type Body = {
+  pages?: string[];
+  fileName?: string;
+};
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
-    const file = formData.get("file");
-
-    if (!file || !(file instanceof File)) {
-      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
-    }
-
-    if (
-      file.type !== "application/pdf" &&
-      !file.name.toLowerCase().endsWith(".pdf")
-    ) {
-      return NextResponse.json(
-        { error: "File must be a PDF" },
-        { status: 400 },
-      );
-    }
-
-    if (file.size > MAX_PDF_BYTES) {
+    const contentLength = Number(req.headers.get("content-length") ?? 0);
+    if (contentLength > MAX_BODY_BYTES) {
       return NextResponse.json(
         {
-          error: `PDF is ${(file.size / 1024 / 1024).toFixed(1)} MB. Vercel caps request bodies at 4.5 MB. Compress the PDF or reduce its page count.`,
+          error: `Body ${(contentLength / 1024 / 1024).toFixed(1)} MB exceeds 4.4 MB cap. Lower DPI client-side or split the PDF.`,
         },
         { status: 413 },
       );
     }
 
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const extracted = await extractContract(bytes);
-    const pdfBase64 = Buffer.from(bytes).toString("base64");
+    const body = (await req.json()) as Body;
+    const pages = body.pages ?? [];
+
+    if (!Array.isArray(pages) || pages.length === 0) {
+      return NextResponse.json(
+        {
+          error:
+            "No pages received. The PDF may have failed to render — re-upload and check the browser console.",
+        },
+        { status: 400 },
+      );
+    }
+
+    if (pages.length > MAX_PAGES) {
+      return NextResponse.json(
+        {
+          error: `${pages.length} pages exceeds ${MAX_PAGES}-page limit. Split the contract or contact support.`,
+        },
+        { status: 413 },
+      );
+    }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
@@ -50,33 +57,22 @@ export async function POST(req: NextRequest) {
 
     const client = new Anthropic({ apiKey });
 
-    const userContent: Anthropic.ContentBlockParam[] = [
-      {
-        type: "document",
-        source: {
-          type: "base64",
-          media_type: "application/pdf",
-          data: pdfBase64,
-        },
+    const userContent: Anthropic.ContentBlockParam[] = pages.map((b64) => ({
+      type: "image" as const,
+      source: {
+        type: "base64" as const,
+        media_type: "image/jpeg" as const,
+        data: b64,
       },
-    ];
-
-    if (extracted.filledCount > 0) {
-      userContent.push({
-        type: "text",
-        text: `STRUCTURED FIELD MANIFEST (from AcroForm metadata — supplementary; trust the PDF if these disagree):\n\n${formatFieldsForLLM(extracted)}`,
-      });
-    } else {
-      userContent.push({
-        type: "text",
-        text: "No usable AcroForm field values were extractable (form was likely flattened by DocuSign or rasterized). Read everything directly from the PDF pages above.",
-      });
-    }
+    }));
+    userContent.push({
+      type: "text",
+      text: `The pages above are a Multi-Board 8.0 Residential Contract (${pages.length} pages, rendered from a PDF). Review per the format.`,
+    });
 
     const response = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 8000,
-      thinking: { type: "disabled" },
+      model: "claude-haiku-4-5",
+      max_tokens: 4000,
       system: [
         {
           type: "text",
@@ -96,10 +92,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       summary,
       stats: {
-        pageCount: extracted.pageCount,
-        fileSizeKb: Math.round(file.size / 1024),
-        acroformFilled: extracted.filledCount,
-        acroformTotal: extracted.fieldCount,
+        pageCount: pages.length,
+        fileName: body.fileName ?? null,
       },
       usage: {
         input: response.usage.input_tokens,
