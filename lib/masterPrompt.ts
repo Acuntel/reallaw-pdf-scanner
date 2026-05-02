@@ -60,22 +60,17 @@ UNUSUAL / RIDERS — only paragraphs that were elected, modified, or are ambiguo
 [tag] Par <N> (<rider name>): <status — elected, N/A, ambiguous>
 
 MISSING FROM HOUSE
-THIS SECTION INVERTS THE INCLUSIONS BLOCK. Do NOT list what's INCLUDED. List what's NOT checked that a typical Chicago-area home of this type would have. Only flag items the absence of which would surprise a buyer:
-- refrigerator
-- range / oven / stove
-- microwave
-- dishwasher
-- washer
-- dryer
-- water heater
-- central air conditioning
-- garage door opener (if home has a garage)
-- smoke detectors / carbon monoxide detectors (legal requirement)
-- light fixtures
-- window treatments
-DO NOT flag: backup generator, intercom, sprinkler system, security system, sump pump, satellite dish, smart thermostat, basement appliances, outdoor furniture — these are property-specific and absence is not surprising.
-Format each as [ACTION] for genuine omissions of expected items.
-If nothing typical is missing: "[OK] No standard inclusions missing."
+CRITICAL RULE: This section ONLY lists items that are NOT checked but would typically be present in a home like this. DO NOT list checked items. DO NOT confirm each present item with [OK]. There is exactly one [OK] possibility for this section, used only when nothing typical is missing.
+
+Items to check for and flag if NOT checked (these would surprise a buyer if absent):
+refrigerator, range/oven/stove, microwave, dishwasher, washer, dryer, water heater, central air conditioning, garage door opener (if home has garage), smoke detectors, carbon monoxide detectors, light fixtures, window treatments.
+
+DO NOT flag absence of: backup generator, intercom, sprinkler system, security system, sump pump, satellite dish, smart thermostat, basement appliances, outdoor furniture, fireplace gas logs, ceiling fans — these are property-specific and absence is unsurprising.
+
+OUTPUT RULES FOR THIS SECTION:
+- For each typical item that is NOT checked: one [ACTION] line.
+- If every typical item is checked: output EXACTLY ONE LINE: "[OK] No standard inclusions missing."
+- Do not list any [OK] line for individual checked items. Do not enumerate what's included. The contract document already does that.
 
 SIGNATURES & INTEGRITY
 [tag] Buyer signed: yes/no, <date>
